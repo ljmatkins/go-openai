@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 )
@@ -54,6 +55,12 @@ type ChatCompletionMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 
+	// ContentItems contains a list of content items (which are more
+	// expressive than the legacy content field).
+	// It is an error to set both Content and ContentItems.
+	// These are serialized out as "content" in MarshalJSON()
+	ContentItems []*ChatCompletionContentItem `json:"content_items,omitempty"`
+
 	// This property isn't in the official documentation, but it's in
 	// the documentation for the official library for python:
 	// - https://github.com/openai/openai-python/blob/main/chatml.md
@@ -61,6 +68,45 @@ type ChatCompletionMessage struct {
 	Name string `json:"name,omitempty"`
 
 	FunctionCall *FunctionCall `json:"function_call,omitempty"`
+}
+
+type ChatCompletionContentItem struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+}
+
+func (m ChatCompletionMessage) MarshalJSON() ([]byte, error) {
+	if m.Content != "" && len(m.ContentItems) > 0 {
+		return nil, errors.New("cannot set both Content and ContentItems")
+	}
+	if len(m.ContentItems) > 0 {
+		out := struct {
+			Role         string                       `json:"role"`
+			ContentItems []*ChatCompletionContentItem `json:"content"`
+			Name         string                       `json:"name,omitempty"`
+			FunctionCall *FunctionCall                `json:"function_call,omitempty"`
+		}{
+			Role:         m.Role,
+			ContentItems: m.ContentItems,
+			Name:         m.Name,
+			FunctionCall: m.FunctionCall,
+		}
+		return json.Marshal(out)
+	}
+
+	out := struct {
+		Role         string        `json:"role"`
+		Content      string        `json:"content"`
+		Name         string        `json:"name,omitempty"`
+		FunctionCall *FunctionCall `json:"function_call,omitempty"`
+	}{
+		Role:         m.Role,
+		Content:      m.Content,
+		Name:         m.Name,
+		FunctionCall: m.FunctionCall,
+	}
+	return json.Marshal(out)
 }
 
 type FunctionCall struct {
